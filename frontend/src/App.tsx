@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { 
   Send, Bot, User, Loader2, Plus, MessageSquare, 
   Trash2, PanelLeftClose, PanelLeft, ChevronDown, 
-  Sparkles, Code2, Compass, Lightbulb, Copy, Check 
+  Copy, Check 
 } from 'lucide-react';
 
 interface Message {
@@ -88,7 +88,7 @@ export default function App() {
     setLoading(true);
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/chat', {
+      const response = await fetch('https://self-learning-5b46.onrender.com/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: messageContent, user_id: userId }),
@@ -109,7 +109,7 @@ export default function App() {
         if (s.id === currentSessionId) {
           return {
             ...s,
-            messages: [...s.messages, { role: 'assistant', content: 'Connection error. Please check your FastAPI backend.' }]
+            messages: [...s.messages, { role: 'assistant', content: 'Connection error. Please check your Render backend.' }]
           };
         }
         return s;
