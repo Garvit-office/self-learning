@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { 
   Send, Bot, User, Loader2, Plus, MessageSquare, 
-  Trash2, PanelLeftClose, PanelLeft, ChevronDown, 
-  Copy, Check 
+  Trash2, PanelLeftClose, PanelLeft, Copy, Check 
 } from 'lucide-react';
 
 interface Message {
@@ -15,6 +14,8 @@ interface ChatSession {
   title: string;
   messages: Message[];
 }
+
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'https://self-learning-5b46.onrender.com';
 
 export default function App() {
   const [sessions, setSessions] = useState<ChatSession[]>([
@@ -29,6 +30,7 @@ export default function App() {
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
   const currentSession = sessions.find(s => s.id === currentSessionId) || sessions[0];
 
   const scrollToBottom = () => {
@@ -37,7 +39,7 @@ export default function App() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [currentSession.messages, loading]);
+  }, [currentSession?.messages, loading]);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -52,7 +54,7 @@ export default function App() {
       title: 'New chat',
       messages: []
     };
-    setSessions([newSession, ...sessions]);
+    setSessions(prev => [newSession, ...prev]);
     setCurrentSessionId(newSession.id);
   };
 
@@ -70,15 +72,18 @@ export default function App() {
     const messageContent = textToSend || input;
     if (!messageContent.trim() || loading) return;
 
-    const userMessage: Message = { role: 'user', content: messageContent };
-    const updatedMessages = [...currentSession.messages, userMessage];
+    const userMessage: Message = { role: 'user', content: messageContent.trim() };
+    const targetSessionId = currentSessionId;
     
-    setSessions(sessions.map(s => {
-      if (s.id === currentSessionId) {
+    // 1. Optimistically append user message using functional state updater
+    setSessions(prev => prev.map(s => {
+      if (s.id === targetSessionId) {
         return {
           ...s,
-          title: s.messages.length === 0 ? messageContent.slice(0, 30) + (messageContent.length > 30 ? '...' : '') : s.title,
-          messages: updatedMessages
+          title: s.messages.length === 0 
+            ? messageContent.slice(0, 28) + (messageContent.length > 28 ? '...' : '') 
+            : s.title,
+          messages: [...s.messages, userMessage]
         };
       }
       return s;
@@ -88,15 +93,28 @@ export default function App() {
     setLoading(true);
 
     try {
-      const response = await fetch('https://self-learning-5b46.onrender.com/chat', {
+      // Differentiate threads by combining user and session ID so history doesn't collide
+      const compositeUserId = `${userId.trim()}_${targetSessionId}`;
+
+      const response = await fetch(`${BACKEND_URL}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: messageContent, user_id: userId }),
+        body: JSON.stringify({ 
+          message: messageContent.trim(), 
+          user_id: compositeUserId 
+        }),
       });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || `Server error: ${response.status}`);
+      }
+
       const data = await response.json();
       
+      // 2. Append assistant response using functional state updater
       setSessions(prev => prev.map(s => {
-        if (s.id === currentSessionId) {
+        if (s.id === targetSessionId) {
           return {
             ...s,
             messages: [...s.messages, { role: 'assistant', content: data.response }]
@@ -104,12 +122,20 @@ export default function App() {
         }
         return s;
       }));
-    } catch (error) {
+    } catch (error: any) {
       setSessions(prev => prev.map(s => {
-        if (s.id === currentSessionId) {
+        if (s.id === targetSessionId) {
           return {
             ...s,
-            messages: [...s.messages, { role: 'assistant', content: 'Connection error. Please check your Render backend.' }]
+            messages: [
+              ...s.messages, 
+              { 
+                role: 'assistant', 
+                content: error.message?.includes('Failed to fetch') 
+                  ? 'Connection error: Your Render backend might be waking up (Render free tier spins down after inactivity). Please wait ~45s and retry.' 
+                  : `Error: ${error.message || 'Something went wrong.'}` 
+              }
+            ]
           };
         }
         return s;
@@ -175,8 +201,8 @@ export default function App() {
         </div>
 
         <div className="p-3.5 border-t border-zinc-200 bg-white flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-amber-400 flex items-center justify-center font-bold text-xs text-zinc-900 shadow-sm">
-            {userId.charAt(0).toUpperCase()}
+          <div className="w-8 h-8 rounded-xl bg-amber-400 flex items-center justify-center font-bold text-xs text-zinc-900 shadow-sm shrink-0">
+            {(userId.trim().charAt(0) || 'U').toUpperCase()}
           </div>
           <div className="flex-1 truncate">
             <input 
@@ -208,11 +234,11 @@ export default function App() {
             )}
             <div className="flex items-center gap-2 px-3 py-1.5 hover:bg-zinc-100 rounded-xl cursor-pointer transition-colors duration-150 text-xs font-semibold text-zinc-800">
               <span>Leo Assistant</span>
-              <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-md border border-amber-200">v2</span>
+              <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-md border border-amber-200 font-bold">v2</span>
             </div>
           </div>
           <div className="w-8 h-8 rounded-xl bg-amber-400 flex items-center justify-center text-xs font-bold text-zinc-900 shadow-sm">
-            {userId.charAt(0).toUpperCase()}
+            {(userId.trim().charAt(0) || 'U').toUpperCase()}
           </div>
         </header>
 
@@ -266,7 +292,7 @@ export default function App() {
                   </div>
                   {msg.role === 'user' && (
                     <div className="w-7 h-7 rounded-xl bg-zinc-900 flex items-center justify-center text-white shrink-0 mt-1 text-xs font-bold shadow-sm">
-                      {userId.charAt(0).toUpperCase()}
+                      {(userId.trim().charAt(0) || 'U').toUpperCase()}
                     </div>
                   )}
                 </div>
@@ -278,7 +304,7 @@ export default function App() {
                   </div>
                   <div className="flex items-center gap-2 bg-zinc-50 border border-zinc-200 px-4 py-3 rounded-2xl text-zinc-800 shadow-sm">
                     <Loader2 className="animate-spin text-amber-600" size={14} />
-                    <span>Thinking...</span>
+                    <span>Thinking & querying memory...</span>
                   </div>
                 </div>
               )}
@@ -300,7 +326,7 @@ export default function App() {
                     e.preventDefault();
                     handleSendMessage();
                   }
-                }}
+                }} 
                 placeholder="Message Leo..." 
                 rows={1}
                 className="w-full bg-transparent text-xs md:text-sm text-zinc-900 placeholder-zinc-400 px-4 pt-3.5 pb-12 focus:outline-none resize-none max-h-40"
@@ -316,7 +342,7 @@ export default function App() {
               </div>
             </form>
             <div className="text-center mt-2.5">
-              <span className="text-[10px] text-zinc-400">Leo Assistant • Powered by LangGraph & Mem0</span>
+              <span className="text-[10px] text-zinc-400">Leo Assistant • LangGraph & Mem0 Pipeline</span>
             </div>
           </div>
         </div>
