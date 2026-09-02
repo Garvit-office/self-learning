@@ -15,7 +15,9 @@ interface ChatSession {
   messages: Message[];
 }
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'https://self-learning-5b46.onrender.com';
+// Safely normalize base URL to avoid double slashes or malformed routes
+const rawBackendUrl = (import.meta.env.VITE_BACKEND_URL || 'https://self-learning-5b46.onrender.com').trim();
+const BACKEND_URL = rawBackendUrl.replace(/\/+$/, '');
 
 export default function App() {
   const [sessions, setSessions] = useState<ChatSession[]>([
@@ -61,27 +63,29 @@ export default function App() {
   const deleteSession = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (sessions.length === 1) return;
-    const updated = sessions.filter(s => s.id !== id);
-    setSessions(updated);
-    if (currentSessionId === id) {
-      setCurrentSessionId(updated[0].id);
-    }
+    setSessions(prev => {
+      const updated = prev.filter(s => s.id !== id);
+      if (currentSessionId === id) {
+        setCurrentSessionId(updated[0].id);
+      }
+      return updated;
+    });
   };
 
   const handleSendMessage = async (textToSend?: string) => {
-    const messageContent = textToSend || input;
-    if (!messageContent.trim() || loading) return;
+    const messageContent = (textToSend || input).trim();
+    if (!messageContent || loading) return;
 
-    const userMessage: Message = { role: 'user', content: messageContent.trim() };
+    const userMessage: Message = { role: 'user', content: messageContent };
     const targetSessionId = currentSessionId;
     
-    // 1. Optimistically append user message using functional state updater
+    // 1. Optimistically append user message
     setSessions(prev => prev.map(s => {
       if (s.id === targetSessionId) {
         return {
           ...s,
           title: s.messages.length === 0 
-            ? messageContent.slice(0, 28) + (messageContent.length > 28 ? '...' : '') 
+            ? (messageContent.slice(0, 26) + (messageContent.length > 26 ? '...' : '')) 
             : s.title,
           messages: [...s.messages, userMessage]
         };
@@ -93,26 +97,26 @@ export default function App() {
     setLoading(true);
 
     try {
-      // Differentiate threads by combining user and session ID so history doesn't collide
-      const compositeUserId = `${userId.trim()}_${targetSessionId}`;
+      const targetUrl = `${BACKEND_URL}/chat`;
+      const compositeUserId = `${userId.trim() || 'default'}_${targetSessionId}`;
 
-      const response = await fetch(`${BACKEND_URL}/chat`, {
+      const response = await fetch(targetUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          message: messageContent.trim(), 
+          message: messageContent, 
           user_id: compositeUserId 
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `Server error: ${response.status}`);
+        throw new Error(errorData.detail || `Server status ${response.status}`);
       }
 
       const data = await response.json();
       
-      // 2. Append assistant response using functional state updater
+      // 2. Append assistant response
       setSessions(prev => prev.map(s => {
         if (s.id === targetSessionId) {
           return {
@@ -125,15 +129,16 @@ export default function App() {
     } catch (error: any) {
       setSessions(prev => prev.map(s => {
         if (s.id === targetSessionId) {
+          const isFetchFailure = error.message?.includes('Failed to fetch') || error.name === 'TypeError';
           return {
             ...s,
             messages: [
               ...s.messages, 
               { 
                 role: 'assistant', 
-                content: error.message?.includes('Failed to fetch') 
-                  ? 'Connection error: Your Render backend might be waking up (Render free tier spins down after inactivity). Please wait ~45s and retry.' 
-                  : `Error: ${error.message || 'Something went wrong.'}` 
+                content: isFetchFailure
+                  ? 'Connection notice: If your Render backend was dormant, it may take ~45s to boot up. Please send the message again in a moment.' 
+                  : `Server Error: ${error.message}` 
               }
             ]
           };
