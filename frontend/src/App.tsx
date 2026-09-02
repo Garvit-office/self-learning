@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { 
-  Send, Bot, User, Loader2, Plus, MessageSquare, 
+  Send, Bot, Loader2, Plus, MessageSquare, 
   Trash2, PanelLeftClose, PanelLeft, Copy, Check 
 } from 'lucide-react';
 
